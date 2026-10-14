@@ -1,0 +1,18 @@
+{
+  "n_values": [
+    1000,
+    4000,
+    16000
+  ],
+  "repetitions": 10,
+  "gamma": 0.5,
+  "total_alphas": [
+    0.5,
+    2.0,
+    8.0
+  ],
+  "reference_alpha": 2.0,
+  "typical_replacements": 3,
+  "stress_replacements": 2,
+  "reference_points": 10000
+}
