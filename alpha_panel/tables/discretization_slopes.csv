@@ -1,0 +1,7 @@
+rep,range,slope,nominal_upper_bound_reference,caveat
+0,all,-0.08879055030381974,-0.5,Raw empirical binned TV includes a Monte Carlo floor; no subtraction or equivalence claim.
+0,coarse,-0.26204598132263407,-0.5,Raw empirical binned TV includes a Monte Carlo floor; no subtraction or equivalence claim.
+1,all,-0.07656557923928402,-0.5,Raw empirical binned TV includes a Monte Carlo floor; no subtraction or equivalence claim.
+1,coarse,-0.2288524355522912,-0.5,Raw empirical binned TV includes a Monte Carlo floor; no subtraction or equivalence claim.
+2,all,-0.07118681201491422,-0.5,Raw empirical binned TV includes a Monte Carlo floor; no subtraction or equivalence claim.
+2,coarse,-0.2264275968924881,-0.5,Raw empirical binned TV includes a Monte Carlo floor; no subtraction or equivalence claim.

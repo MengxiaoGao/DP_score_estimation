@@ -1,0 +1,43 @@
+{
+  "source": "private_densities/ (25 grouped projected-LMC density snapshots included in this repository)",
+  "n": [
+    1000,
+    2000,
+    4000,
+    8000,
+    16000
+  ],
+  "alpha": [
+    0.5,
+    1,
+    2,
+    4,
+    8
+  ],
+  "repetitions": 30,
+  "particles": 20000,
+  "sampler": "exponential integrator Eq (1)",
+  "time_grid": "Lemma 1.7, kappa=delta^2",
+  "score": "high-precision spatial interpolation validated against direct particle-wise moments; see numerical_config.json and validation logs",
+  "source_density": "Reuse all 750 projected-LMC private densities; no new private release",
+  "score_risk": false,
+  "discretization": {
+    "n": 4000,
+    "alpha": 1,
+    "reps": [
+      0,
+      1,
+      2
+    ],
+    "inner": 10,
+    "multipliers": [
+      128,
+      32,
+      8,
+      2,
+      1,
+      0.5,
+      0.25
+    ]
+  }
+}

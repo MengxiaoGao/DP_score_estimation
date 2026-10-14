@@ -1,0 +1,6 @@
+{
+  "score_grid": 3201,
+  "method": "exponential integrator, Lemma 1.7 grid, validated linear score interpolation",
+  "validation": "four corners against direct score, 2048 coupled particles each; 48 OU times x 512 independent draws",
+  "caveat": "Numerical diagnostics, not a uniform mathematical interpolation error certificate."
+}
