@@ -1,0 +1,368 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,bm}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{assumption}[theorem]{Assumption}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{definition}[theorem]{Definition}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\wtO}{\widetilde{O}}
+\newcommand{\one}{\mathbf{1}}
+\newcommand{\TV}{\mathrm{TV}}
+\newcommand{\KL}{\mathrm{KL}}
+
+\title{Simulation results for diffusion extension}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\providecommand{\DiffusionFigRoot}{.}
+
+\section{Numerical experiments for the private diffusion sampler}
+\label{sec:diffusion-experiments}
+
+We study separately the effects of the privacy budget, target smoothness, and
+reverse-process discretization.  This order mirrors the error decomposition in
+the theory: the private score and histogram releases determine a private clean
+density, early stopping smooths that density, and the reverse diffusion
+algorithm approximates the early-stopped Ornstein--Uhlenbeck (OU) law.  The
+experiments therefore report a different metric for each stage rather than
+combining density, sampling, and stability criteria in a single plot.
+
+\subsection{Theory and experimental protocol}
+\label{sec:diffusion-experimental-protocol}
+
+For dimension $d=1$, the total-variation upper bound established earlier has
+the polynomial part
+\begin{equation}
+  \delta_n(\alpha,\gamma)
+  = \max\left\{
+      n^{-(\gamma+1)/(2\gamma+3)},
+      (n\alpha)^{-(\gamma+1)/(\gamma+2)}
+    \right\}.
+  \label{eq:experiment-delta}
+\end{equation}
+The same quantity controls the accuracy of the discretized private diffusion
+sampler up to logarithmic factors when
+$T=\log n$, $\tau=n^{-1}$, and $\kappa=\delta_n^2$; the corresponding grid uses
+$N=\widetilde O(\delta_n^{-2})$ score evaluations.  The theory gives a
+class-wise upper bound.  It does not predict exact equality of slopes for a
+single finite target, nor does it order the finite-sample error levels of
+different target distributions.
+
+We use the finite multiscale family
+\begin{equation}
+  \rho_{\gamma,K}(x) \propto
+  \exp\left\{-\frac{x^2}{2}
+  - a\sum_{k=0}^{K}2^{-k(1+\gamma)}\cos(2^k x)\right\},
+  \qquad K=40,\quad a=0.25.
+  \label{eq:multiscale-target}
+\end{equation}
+The score parameters are sampled using projected Langevin Monte Carlo (LMC).  The total privacy budget is divided equally
+between the score release and the histogram release.  The released histogram
+and score determine a cellwise affine density $\widetilde\rho_D$.  We evaluate
+its OU convolution using truncated Gaussian moments and generate samples with
+the exponential reverse integrator on the grid described above.  The
+implementation uses $100{,}000$ projected-LMC steps, $20{,}000$ generated
+particles, and a $50{,}000$-point independent reference sample per setting.
+The OU score is evaluated using a $3{,}201$-point interpolation whose error was
+checked against direct truncated-moment evaluation.
+
+All panels use
+\[
+  n\in\{1000,2000,4000,8000,16000\}
+\]
+and $30$ independent training datasets per displayed setting.  Points show
+replication means and pointwise $95\%$ Student-$t$ intervals.  Empirical
+sample-size slopes are ordinary least-squares fits of
+$\log(\text{mean error})$ on $\log n$ using all five sample sizes.  Their
+$95\%$ intervals are based on $2{,}000$ bootstrap resamples of the independent
+datasets.  These intervals quantify simulation variability in a descriptive
+slope; they are not confidence intervals for the theoretical exponent.
+
+We distinguish four evaluation quantities.  First,
+$\operatorname{TV}(\widetilde\rho_D,\rho_0)$ measures private density
+estimation.  Second,
+$\operatorname{TV}(P_\tau\widetilde\rho_D,\rho_0)$ measures the
+early-stopped OU error.  Third, generated binned TV is a finite-resolution
+two-sample diagnostic for the final particles.  Finally, reverse-to-OU binned
+TV compares reverse samples with independent samples from
+$P_\tau\widetilde\rho_D$ and isolates numerical sampling error at the chosen
+resolution.
+
+\subsection{Privacy-budget panel}
+\label{sec:alpha-panel}
+
+We first fix $\gamma=0.5$ and vary
+$\alpha\in\{0.5,1,2,4,8\}$.  Within each $(n,r)$ pair, where $r$ indexes the
+replication, the same training dataset and the same independent test sample
+are reused at all privacy budgets.  Projected-LMC, histogram, and reverse
+sampling randomness are independent across privacy levels.  This pairing
+removes between-dataset variation from comparisons across $\alpha$ without
+coupling the private mechanisms themselves.
+
+For $\gamma=0.5$, Equation~\eqref{eq:experiment-delta} becomes
+\begin{equation}
+  \delta_n(\alpha,0.5)
+  =\max\{n^{-3/8},(n\alpha)^{-3/5}\}.
+  \label{eq:alpha-panel-rate}
+\end{equation}
+The crossover is $\alpha_\star=n^{-3/8}$, which is below every privacy budget
+in the displayed range.  Thus the relevant asymptotic sample-size reference is
+$-3/8$, whereas the leading polynomial bound has zero $\alpha$ exponent in
+this regime.  This does not imply constant finite-sample error in $\alpha$:
+hidden constants, logarithmic factors, and lower-order privacy terms remain.
+
+Figure~\ref{fig:alpha-density-vs-alpha} shows the direct effect of relaxing
+privacy.  At $n=1000$, the mean private-density TV decreases from $0.132$ at
+$\alpha=0.5$ to $0.065$ at $\alpha=8$; at $n=16000$, it decreases from
+$0.0289$ to $0.0206$.  The weaker dependence at the largest sample size is
+consistent with the non-private term becoming dominant.  Quantitatively, the
+empirical $\alpha$ slope of density TV changes from $-0.252$ at $n=1000$ to
+$-0.119$ at $n=16000$.  We interpret this as finite-sample attenuation of the
+privacy contribution, rather than as evidence for an exact power law in
+$\alpha$.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\linewidth]{\DiffusionFigRoot/alpha_panel/figures/density_tv_vs_alpha.pdf}
+  \caption{Private-density total variation versus the privacy budget.  Each
+  curve fixes the sample size.  Training datasets are paired across privacy
+  budgets within a replication; error bars are pointwise $95\%$ Student-$t$
+  intervals over $30$ datasets.  The horizontal axis is logarithmic.}
+  \label{fig:alpha-density-vs-alpha}
+\end{figure}
+
+The sample-size comparison is clearest after the early-stopping OU step.
+Figure~\ref{fig:alpha-ou-vs-n} and Table~\ref{tab:alpha-ou-slopes} show that the
+OU-TV slopes approach the reference $-3/8$ as privacy is relaxed.  At
+$\alpha=2,4,8$, the estimates are $-0.391$, $-0.367$, and $-0.370$,
+respectively.  At $\alpha=0.5$ and $1$, the curves are steeper over this finite
+range.  A steeper fitted slope does not improve the minimax upper bound; it
+indicates that these settings are still moving between privacy-dominated and
+sample-dominated finite-sample behavior.  The private-density slopes are also
+steeper than $-3/8$ (from $-0.544$ to $-0.409$ across the five privacy
+budgets), which reinforces the need to describe the theoretical exponent as a
+reference rather than a fitted equality.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\linewidth]{\DiffusionFigRoot/alpha_panel/figures/ou_tv_vs_n.pdf}
+  \caption{Early-stopped OU total variation versus sample size in the privacy
+  panel.  Both axes are logarithmic.  The high-privacy-budget curves have
+  empirical slopes close to the theoretical sample-size reference $-3/8$.}
+  \label{fig:alpha-ou-vs-n}
+\end{figure}
+
+\begin{table}[t]
+  \centering
+  \caption{Empirical sample-size slopes for early-stopped OU TV in the privacy
+  panel.  Intervals are percentile bootstrap intervals over paired datasets.}
+  \label{tab:alpha-ou-slopes}
+  \begin{tabular}{@{}cccc@{}}
+    \toprule
+    $\alpha$ & Empirical slope & $95\%$ interval & Theory reference \\
+    \midrule
+    $0.5$ & $-0.512$ & $[-0.537,-0.488]$ & $-0.375$ \\
+    $1$   & $-0.441$ & $[-0.461,-0.418]$ & $-0.375$ \\
+    $2$   & $-0.391$ & $[-0.410,-0.371]$ & $-0.375$ \\
+    $4$   & $-0.367$ & $[-0.385,-0.347]$ & $-0.375$ \\
+    $8$   & $-0.370$ & $[-0.390,-0.350]$ & $-0.375$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Generated binned TV follows the same qualitative privacy ordering, but its
+large-$n$ curves flatten as the error approaches the finite-particle and
+binning resolution.  For example, at $n=16000$ the means are $0.0222$,
+$0.0193$, and $0.0194$ for $\alpha=0.5,2,8$.  We therefore use density TV and
+OU TV for the rate comparison and treat generated binned TV and Wasserstein
+distance as supporting diagnostics.  No total-variation exponent is assigned
+to Wasserstein distance.
+
+\subsection{Smoothness panel}
+\label{sec:gamma-panel}
+
+We next fix $\alpha=2$ and vary
+$\gamma\in\{0.2,0.4,0.6,0.8,1\}$.  The values $K=40$ and $a=0.25$ remain
+fixed.  Unlike the privacy panel, changing $\gamma$ changes the target in
+Equation~\eqref{eq:multiscale-target}; datasets are therefore redrawn
+independently for every $(n,\gamma,r)$ setting.  Consequently, the vertical
+ordering of the five curves is not a controlled monotonicity comparison.  In
+particular, the theory does not require the $\gamma=1$ curve to lie below all
+others at every finite $n$.  The relevant comparison is whether the
+sample-size exponent changes with $\gamma$ as predicted.
+
+At fixed $\alpha=2$, the sample-size reference is
+\begin{equation}
+  s_{\rm th}(\gamma)=-\frac{\gamma+1}{2\gamma+3}.
+  \label{eq:gamma-slope-reference}
+\end{equation}
+Figure~\ref{fig:gamma-ou-vs-n} shows a systematic reduction in OU TV as $n$
+increases for every target.  More directly,
+Figure~\ref{fig:gamma-ou-slopes} and Table~\ref{tab:gamma-ou-slopes} compare the
+empirical and theoretical exponents.  The theoretical reference lies within
+the bootstrap interval at all five smoothness levels.  The observed slopes
+also become more negative with $\gamma$, from $-0.355$ at $\gamma=0.2$ to
+$-0.416$ at $\gamma=1$, closely tracking the theoretical change from $-0.353$
+to $-0.400$.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\linewidth]{\DiffusionFigRoot/gamma_panel/figures/ou_tv_vs_n.pdf}
+  \caption{Early-stopped OU total variation versus sample size for the
+  smoothness panel.  Changing $\gamma$ changes the target distribution, so
+  curve heights should not be interpreted as a monotonicity claim in
+  smoothness.  Both axes are logarithmic.}
+  \label{fig:gamma-ou-vs-n}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\linewidth]{\DiffusionFigRoot/gamma_panel/figures/ou_tv_slopes.pdf}
+  \caption{Empirical sample-size slopes of early-stopped OU TV and the
+  theoretical reference $-(\gamma+1)/(2\gamma+3)$.  Bars are $95\%$
+  dataset-bootstrap intervals.  This slope comparison, rather than the
+  vertical ordering in Figure~\ref{fig:gamma-ou-vs-n}, is the primary
+  smoothness result.}
+  \label{fig:gamma-ou-slopes}
+\end{figure}
+
+\begin{table}[t]
+  \centering
+  \caption{Empirical and theoretical sample-size slopes in the smoothness
+  panel, using early-stopped OU TV.}
+  \label{tab:gamma-ou-slopes}
+  \begin{tabular}{@{}cccc@{}}
+    \toprule
+    $\gamma$ & Empirical slope & $95\%$ interval & Theory reference \\
+    \midrule
+    $0.2$ & $-0.355$ & $[-0.370,-0.338]$ & $-0.353$ \\
+    $0.4$ & $-0.379$ & $[-0.400,-0.359]$ & $-0.368$ \\
+    $0.6$ & $-0.400$ & $[-0.419,-0.380]$ & $-0.381$ \\
+    $0.8$ & $-0.410$ & $[-0.430,-0.389]$ & $-0.391$ \\
+    $1.0$ & $-0.416$ & $[-0.437,-0.394]$ & $-0.400$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The density-TV slopes are uniformly steeper than their theoretical references,
+whereas the generated binned-TV slopes become flatter at the smoother targets.
+The latter effect is expected once generated binned TV approaches the roughly
+$0.013$ two-sample resolution floor.  Early-stopped OU TV lies between these
+two numerical effects and gives the cleanest comparison with
+Equation~\eqref{eq:gamma-slope-reference}; we therefore designate it as the
+primary metric for the smoothness-rate claim.
+
+\subsection{Reverse-diffusion discretization}
+\label{sec:reverse-discretization}
+
+The preceding panels are informative about statistical error only if the
+reverse sampler is sufficiently accurate.  Across the full panels, the mean
+reverse-to-OU binned TV is approximately $0.013$, essentially the same as the
+binned TV obtained by comparing two independent OU samples of equal size.
+The paired reverse-minus-IID difference is close to zero in nearly every
+$(n,\alpha)$ cell.  Thus, at the resolution of the experiment, the reverse
+integrator is not the dominant error source.
+
+We also perform a pre-specified discretization experiment at $n=4000$ and
+$\alpha=1$ using three fixed private densities.  We vary the grid multiplier
+so that the number of reverse steps ranges from $66$ to $31{,}366$, and run
+$10$ independent reverse samplers with $20{,}000$ particles for each density
+and grid.  Figure~\ref{fig:discretization} shows a clear reduction from about
+$0.025$--$0.027$ at $N=66$ to the $0.013$--$0.014$ IID OU floor by roughly
+$N=250$.  Further refinement does not yield a visible improvement because the
+finite-particle/binning floor dominates.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{\DiffusionFigRoot/alpha_panel/figures/discretization.pdf}
+  \caption{Reverse-process discretization sensitivity for three pre-selected
+  private densities.  The plotted metric is reverse-to-OU binned TV; the IID
+  OU line estimates the finite-particle/binning floor using the same sample
+  size.  The horizontal axis is logarithmic.}
+  \label{fig:discretization}
+\end{figure}
+
+The coarse-grid empirical slopes are between $-0.23$ and $-0.26$, whereas the
+nominal discretization upper-bound reference is $-1/2$.  The all-grid slopes
+are only about $-0.07$ to $-0.09$ because most points already lie on the
+empirical floor.  We therefore use this experiment to establish numerical
+adequacy, rather than to claim an empirical verification of the
+discretization exponent.
+
+\subsection{Single-record stability diagnostic}
+\label{sec:replacement-stability}
+
+We recommend placing this subsection and its figure in the appendix because
+it studies a mechanism-level phenomenon rather than the main accuracy rate.
+At $\gamma=0.5$, we compare the response to a one-record replacement for a
+non-private constrained score-matching ERM, the mode of the private target,
+and a projected-LMC release.  The basis, bandwidth, truncation radius, and
+constraints are frozen across methods.  We use
+$n\in\{1000,4000,16000\}$, $\alpha\in\{0.5,2,8\}$, and $10$ independent base
+datasets; inference is performed at the dataset level.
+
+For the two neighboring datasets, the private LMC chains use the same Gaussian
+innovations.  Under this synchronous coupling, the mean output-function RMS
+shift is below the corresponding non-private shift in all displayed cells.
+For typical replacements, the ratio ranges from $0.089$ to $0.637$; for the
+pre-specified stress replacements it ranges from $0.022$ to $0.154$.  The
+ratio generally increases with $\alpha$, as expected when privacy noise is
+reduced.  The deterministic private mode shows a more modest stability gain,
+especially for typical replacements.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{\DiffusionFigRoot/stability/figures/typical_private_coupled_function_rms.pdf}
+  \caption{Output-function RMS change after a typical one-record replacement.
+  Private chains use synchronous Gaussian innovations for the neighboring
+  datasets.  Coefficient-space diagnostics are reported separately in the
+  supplement.}
+  \label{fig:replacement-stability}
+\end{figure}
+
+This experiment is deliberately described as a diagnostic.  Differential
+privacy controls output distributions for neighboring datasets; it does not
+require every synchronously coupled realization to move less than a
+non-private estimator.  Moreover, two independent LMC releases from the same
+dataset exhibit a mechanism-randomness floor that is larger than the coupled
+input response in many settings.  Figure~\ref{fig:replacement-stability}
+therefore illustrates reduced input sensitivity under one controlled coupling
+and does not constitute a separate privacy guarantee.
+
+\subsection{Summary and limitations}
+\label{sec:diffusion-experiment-summary}
+
+The experiments support three conclusions.  First, relaxing privacy improves
+finite-sample accuracy, with the dependence on $\alpha$ weakening as $n$
+increases; at moderate and large privacy budgets, the OU-TV sample-size slope
+is close to $-3/8$.  Second, the smoothness dependence of the OU-TV slopes
+tracks $-(\gamma+1)/(2\gamma+3)$ across all five targets.  Third, the reverse
+sampler reaches the finite-particle resolution floor well before the default
+theoretical grid is exhausted, so private density estimation is the dominant
+error source at the reported settings.
+
+These findings are consistent with the theoretical rate decomposition. The target is a fixed finite
+multiscale family, logarithmic factors and constants are visible at these
+sample sizes, projected LMC is run for a finite number of steps, and the OU
+score uses validated numerical interpolation rather than exact arithmetic.
+Generated binned TV and Wasserstein distance are retained as supporting
+metrics and are not used to redefine the population-TV theory.
+
+
+\end{document}
