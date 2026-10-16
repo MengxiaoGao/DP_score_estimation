@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """One-dimensional spline score-estimation model and sampling helpers.
 
-Imported by experiment_common.py, check_convergence.py,
-samples_and_privacy.py and samples_and_smoothness.py.
+Provides projected_lmc_draw and one_replicate (one final LMC release).
+Legacy Gibbs helpers remain for comparison. The accompanying experiment_common.py
+uses this same projected-LMC kernel for convergence and risk studies.
 
 The old standalone rate and privacy-phase experiments and their CLI have
 been removed. Running this file directly does not start an experiment.
@@ -75,7 +76,7 @@ def true_score(
     gamma: float,
     target: str = "multiscale",
     amplitude: float = 0.25,
-    K: int = 10,
+    K: int = 40,
     lam: float = 0.25,
 ) -> np.ndarray:
     if target == "multiscale":
@@ -145,7 +146,7 @@ def sample_target(
     rng: np.random.Generator,
     target: str = "multiscale",
     amplitude: float = 0.25,
-    K: int = 10,
+    K: int = 40,
     lam: float = 0.25,
 ) -> np.ndarray:
     """Exact rejection samplers using N(0,1) as proposal."""
@@ -291,6 +292,9 @@ class Model1D:
     c: float
     A: np.ndarray
     h: np.ndarray
+    n: int
+    gamma: float
+    alpha: float | None
 
 
 def build_model(
@@ -299,7 +303,7 @@ def build_model(
     alpha: float | None,
     target: str = "multiscale",
     amplitude: float = 0.25,
-    K: int = 10,
+    K: int = 40,
     lam: float = 0.25,
     bandwidth_factor: float = 0.50,
     R_factor: float = 1.25,
@@ -407,11 +411,263 @@ def build_model(
         c=c,
         A=A,
         h=h,
+        n=n,
+        gamma=gamma,
+        alpha=alpha,
     )
 
 
+# Projected LMC adapted from the supplied diffusion-extension script.
+
+def _project_pair_strip(z0: float, z1: float, D: float) -> tuple[float, float]:
+    """Euclidean projection of (z0,z1) onto |z1-z0| <= D."""
+    diff = z1 - z0
+    if diff > D:
+        e = 0.5 * (diff - D)
+        return z0 + e, z1 - e
+    if diff < -D:
+        e = 0.5 * (-D - diff)
+        return z0 - e, z1 + e
+    return z0, z1
+
+
+def dykstra_project(
+    y: np.ndarray,
+    B: float,
+    D: float,
+    max_cycles: int = 80,
+    tol: float = 1e-10,
+) -> tuple[np.ndarray, int, float]:
+    """Project y onto box + adjacent-difference constraints.
+
+    Cyclic Dykstra projection onto one box and m-1 pairwise strips.  For this
+    1D chain polytope the elementary set projections are analytic.
+    """
+    if not np.isfinite(B) or B <= 0 or not np.isfinite(D) or D <= 0:
+        raise ValueError("B and D must be finite and positive")
+    if max_cycles < 1 or not np.isfinite(tol) or tol <= 0:
+        raise ValueError("Projection cycles and tolerance must be positive")
+    x = np.asarray(y, dtype=float).copy()
+    if x.ndim != 1 or x.size == 0 or not np.isfinite(x).all():
+        raise ValueError("Projection input must be a nonempty finite vector")
+    m = x.size
+    p_box = np.zeros(m)
+    p_pair = np.zeros((max(m - 1, 0), 2))
+
+    for cyc in range(1, max_cycles + 1):
+        x_old = x.copy()
+
+        # Box set.
+        z = x + p_box
+        xn = np.clip(z, -B, B)
+        p_box = z - xn
+        x = xn
+
+        # Pairwise strips.
+        for j in range(m - 1):
+            z0 = x[j] + p_pair[j, 0]
+            z1 = x[j + 1] + p_pair[j, 1]
+            q0, q1 = _project_pair_strip(z0, z1, D)
+            p_pair[j, 0] = z0 - q0
+            p_pair[j, 1] = z1 - q1
+            x[j], x[j + 1] = q0, q1
+
+        change = float(np.max(np.abs(x - x_old)))
+        box_v = max(0.0, float(np.max(np.abs(x)) - B))
+        diff_v = 0.0 if m <= 1 else max(0.0, float(np.max(np.abs(np.diff(x))) - D))
+        violation = max(box_v, diff_v)
+        if change <= tol and violation <= 10 * tol:
+            return x, cyc, violation
+
+    box_v = max(0.0, float(np.max(np.abs(x)) - B))
+    diff_v = 0.0 if m <= 1 else max(0.0, float(np.max(np.abs(np.diff(x))) - D))
+    raise RuntimeError(
+        f"Dykstra projection did not converge in {max_cycles} cycles "
+        f"(change={change:.3g}, violation={max(box_v, diff_v):.3g}); "
+        "increase projection_cycles."
+    )
+
+
+DEFAULT_PRIVACY_BETA = 0.01
+DEFAULT_FIXED_RIDGE = 0.001
+
+
+def ridge_calibration(model, *, ridge=None, ridge_rn=None, ridge_upsilon=None,
+                      privacy_beta=None) -> dict:
+    """Resolve the fixed or theorem gradient ridge coefficient for this 1D model.
+
+    lambda = min(r_n, 2*R_n**(-2)*log(1 + Upsilon/2)) / |J|,
+    with R_n=model.coef_bound, not the localisation radius model.R.
+    Default r_n is max(n**(-2*gamma/(1+2*gamma+2)),
+                       (n*alpha)**(-2*gamma/(1+gamma+1))).
+    With no ridge inputs, use the fixed ridge DEFAULT_FIXED_RIDGE=0.001.
+    Explicit theorem inputs select calibration instead; beta=0.01 gives
+    Upsilon=beta/(1+exp(alpha)). An explicit ridge selects a fixed value.
+    """
+    m = model.h.size
+    B = float(model.coef_bound)
+    if m < 1 or not np.isfinite(B) or B <= 0:
+        raise ValueError('Positive coefficient count and box bound required')
+    if all(v is None for v in (ridge, ridge_rn, ridge_upsilon, privacy_beta)):
+        ridge = DEFAULT_FIXED_RIDGE
+    if ridge is not None:
+        if any(v is not None for v in (ridge_rn, ridge_upsilon, privacy_beta)):
+            raise ValueError('A fixed ridge cannot be combined with theorem ridge inputs')
+        if not np.isfinite(ridge) or ridge < 0:
+            raise ValueError('Fixed ridge must be finite and nonnegative')
+        return dict(mode='fixed', ridge=float(ridge), r_n=None, upsilon=None,
+                    privacy_beta=None, tv_cap=None, coefficient_radius=B, coefficients=m)
+    if ridge_upsilon is None and privacy_beta is None:
+        privacy_beta = DEFAULT_PRIVACY_BETA
+    if (ridge_upsilon is None) == (privacy_beta is None):
+        raise ValueError('Theorem ridge requires exactly one of ridge_upsilon or privacy_beta')
+    n, gamma, alpha = model.n, model.gamma, model.alpha
+    if n < 1 or not np.isfinite(gamma) or not 0 < gamma <= 1:
+        raise ValueError('Theorem ridge requires n>=1 and gamma in (0,1]')
+    if alpha is None or not np.isfinite(alpha) or alpha <= 0:
+        raise ValueError('Theorem ridge requires a finite positive alpha')
+    if ridge_rn is None:
+        rn = max(math.exp(-2*gamma/(1+2*gamma+2)*math.log(n)),
+                 math.exp(-2*gamma/(1+gamma+1)*(math.log(n)+math.log(alpha))))
+    else:
+        rn = float(ridge_rn)
+    if not np.isfinite(rn) or rn <= 0:
+        raise ValueError('r_n must be finite and positive')
+    if privacy_beta is not None:
+        if not np.isfinite(privacy_beta) or not 0 < privacy_beta < 1:
+            raise ValueError('privacy_beta must lie in (0,1)')
+        # Stable for large positive alpha; do not evaluate exp(alpha).
+        ea = math.exp(-alpha)
+        upsilon = float(privacy_beta)*ea/(1+ea)
+    else:
+        upsilon = float(ridge_upsilon)
+    if not np.isfinite(upsilon) or upsilon <= 0:
+        raise ValueError('Upsilon must be finite and positive (check numerical underflow)')
+    cap = 2*math.log1p(upsilon/2)/(B*B)
+    value = min(rn, cap)/m
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError('Calibrated ridge is not representable as a positive finite float')
+    return dict(mode='theorem', ridge=value, r_n=rn, upsilon=upsilon,
+                privacy_beta=privacy_beta, tv_cap=cap,
+                coefficient_radius=B, coefficients=m)
+
+
+@dataclass
+class LMCInfo:
+    step_size: float
+    lipschitz: float
+    ridge: float
+    n_steps: int
+    mean_projection_cycles: float
+    max_projection_violation: float
+    risk_trace_steps: list[int]
+    risk_trace: list[float]
+    ridge_calibration: dict
+
+
+def projected_lmc_draw(
+    model,
+    rng: np.random.Generator,
+    n_steps: int,
+    ridge: float | None = None,
+    step_factor: float = 0.01,
+    x_test: np.ndarray | None = None,
+    cfg: SimConfig | None = None,
+    trace_every: int = 0,
+    projection_cycles: int = 80,
+    projection_tol: float = 1e-10,
+    initial: np.ndarray | None = None,
+    trace: np.ndarray | None = None,
+    label: str = "",
+    report_every: int = 0,
+    ridge_rn: float | None = None,
+    ridge_upsilon: float | None = None,
+    privacy_beta: float | None = None,
+) -> tuple[np.ndarray, LMCInfo]:
+    """One approximate projected-LMC draw from the ridge-regularised target.
+
+    Potential: c*(theta.T@A@theta/2 + h.T@theta) + ridge*||theta||^2/2.
+    Finite step size, finite run length and numerical projection introduce
+    approximation error; this routine does not certify TV error or privacy.
+    The paper's delta convention is delta=2*eta. The default ridge is fixed
+    at 0.001; explicit theorem inputs select calibration from r_n and Upsilon.
+
+    eta = step_factor / L, where L is the smooth-potential gradient Lipschitz
+    constant.  The starting point theta=0 is data independent.
+    """
+    if not isinstance(n_steps, (int, np.integer)) or n_steps < 1:
+        raise ValueError("n_steps must be a positive integer")
+    calibration = ridge_calibration(model, ridge=ridge, ridge_rn=ridge_rn,
+                                    ridge_upsilon=ridge_upsilon, privacy_beta=privacy_beta)
+    ridge = calibration['ridge']
+    if not np.isfinite(step_factor) or not 0 < step_factor < 2:
+        raise ValueError("step_factor must lie in (0, 2)")
+    if model.c < 0 or not np.isfinite(model.c):
+        raise ValueError("model.c must be finite and nonnegative")
+    if trace_every < 0 or (trace_every and (x_test is None or cfg is None)):
+        raise ValueError("Risk tracing requires x_test, cfg and nonnegative trace_every")
+    lam_max = float(np.linalg.eigvalsh(model.A).max())
+    Lgrad = model.c * lam_max + ridge
+    if not np.isfinite(Lgrad) or Lgrad <= 0:
+        raise ValueError("Potential Lipschitz constant must be positive and finite")
+    eta = step_factor / Lgrad
+
+    theta = np.zeros(model.h.size) if initial is None else np.asarray(initial, dtype=float).copy()
+    if (theta.shape != model.h.shape or not np.isfinite(theta).all()
+        or np.max(np.abs(theta)) > model.coef_bound + projection_tol
+        or (theta.size > 1 and np.max(np.abs(np.diff(theta))) > model.diff_bound + projection_tol)):
+        raise ValueError("Invalid or infeasible initial state")
+    if trace is not None and trace.shape != (n_steps, theta.size):
+        raise ValueError("Trace must have shape (n_steps, coefficients)")
+    if report_every < 0:
+        raise ValueError("report_every must be nonnegative")
+    proj_cycles_used = []
+    max_v = 0.0
+    trace_steps, trace_risks = [], []
+
+    for k in range(1, n_steps + 1):
+        grad = model.c * (model.A @ theta + model.h) + ridge * theta
+        proposal = theta - eta * grad + math.sqrt(2.0 * eta) * rng.normal(size=theta.size)
+        theta, cyc, v = dykstra_project(
+            proposal,
+            model.coef_bound,
+            model.diff_bound,
+            max_cycles=projection_cycles,
+            tol=projection_tol,
+        )
+        proj_cycles_used.append(cyc)
+        max_v = max(max_v, v)
+        if trace is not None:
+            trace[k - 1] = theta
+        if report_every and k % report_every == 0:
+            print(f"{label}: {k:,}/{n_steps:,} LMC steps", flush=True)
+
+        if trace_every and (k == 1 or k % trace_every == 0 or k == n_steps):
+            trace_steps.append(k)
+            if x_test is not None and cfg is not None:
+                r = theta_risk(
+                    model, theta, x_test, cfg.gamma, cfg.target,
+                    cfg.amplitude, cfg.K, cfg.lam,
+                )
+                trace_risks.append(float(r))
+
+    info = LMCInfo(
+        step_size=eta,
+        lipschitz=Lgrad,
+        ridge=ridge,
+        n_steps=n_steps,
+        mean_projection_cycles=float(np.mean(proj_cycles_used)),
+        max_projection_violation=float(max_v),
+        risk_trace_steps=trace_steps,
+        risk_trace=trace_risks,
+        ridge_calibration=calibration,
+    )
+    return theta, info
+
+
+
 # ============================================================
-# CPU-friendly exact-target Gibbs kernel
+# Legacy Gibbs kernel (available for comparisons only)
 #
 # This is NOT the projected-LMC algorithm from the theory section.
 # It targets the same constrained exponential-mechanism density pi_D
@@ -451,6 +707,33 @@ def _sample_truncated_exponential(
     y = -np.log1p(-u * den) / rate
     return float(hi - y)
 
+
+# Historical implementation, kept commented out for reference.
+# def _sample_truncated_normal(
+#     mean: float,
+#     sd: float,
+#     lo: float,
+#     hi: float,
+#     rng: np.random.Generator,
+# ) -> float:
+#     """
+#     Inverse-CDF truncated normal sampler.
+#     """
+#     a = (lo - mean) / sd
+#     b = (hi - mean) / sd
+
+#     pa = ndtr(a)
+#     pb = ndtr(b)
+
+#     if pb - pa <= 1e-14:
+#         # Numerically extreme tail.  The feasible interval is typically
+#         # tiny relative to the Gaussian scale; midpoint is a safe fallback.
+#         return float(0.5 * (lo + hi))
+
+#     p = pa + rng.uniform() * (pb - pa)
+#     p = min(max(p, 1e-15), 1.0 - 1e-15)
+#     x = mean + sd * ndtri(p)
+#     return float(min(max(x, lo), hi))
 
 def _sample_truncated_normal(
     mean: float,
@@ -761,16 +1044,27 @@ class SimConfig:
     gamma: float = 0.5
     target: str = "multiscale"
     amplitude: float = 0.25
-    K: int = 10
+    K: int = 40
     lam: float = 0.25
     bandwidth_factor: float = 0.50
     R_factor: float = 1.25
     coef_bound_factor: float = 1.10
+    # Legacy Gibbs settings; not used by one_replicate.
     sweeps: int = 500
     burn_sweeps: int = 200
     thin: int = 10
     n_mcmc_draws: int = 20
     n_test: int = 10000
+    # Projected LMC defaults for the current experiments.
+    lmc_steps: int = 100000
+    # None resolves to DEFAULT_FIXED_RIDGE unless theorem inputs are supplied.
+    ridge: float | None = None
+    ridge_rn: float | None = None
+    ridge_upsilon: float | None = None
+    privacy_beta: float | None = None
+    lmc_step_factor: float = 0.01
+    projection_cycles: int = 80
+    projection_tol: float = 1e-10
 
 
 def one_replicate(
@@ -804,14 +1098,15 @@ def one_replicate(
         coef_bound_factor=cfg.coef_bound_factor,
     )
 
-    draws = gibbs_draws(
-        model=model,
-        rng=rng,
-        sweeps=cfg.sweeps,
-        burn_sweeps=cfg.burn_sweeps,
-        thin=cfg.thin,
-        n_draws=cfg.n_mcmc_draws,
+    theta, lmc_info = projected_lmc_draw(
+        model=model, rng=rng, n_steps=cfg.lmc_steps,
+        ridge=cfg.ridge, step_factor=cfg.lmc_step_factor,
+        ridge_rn=cfg.ridge_rn, ridge_upsilon=cfg.ridge_upsilon,
+        privacy_beta=cfg.privacy_beta,
+        projection_cycles=cfg.projection_cycles,
+        projection_tol=cfg.projection_tol,
     )
+    draws = [theta]
 
     x_test = sample_target(
         n=cfg.n_test,
@@ -848,6 +1143,16 @@ def one_replicate(
         "alpha": alpha,
         "seed": seed,
         "risk": risk,
+        "sampler": "projected_lmc",
+        "lmc_steps": lmc_info.n_steps,
+        "ridge": lmc_info.ridge,
+        "ridge_mode": lmc_info.ridge_calibration['mode'],
+        "ridge_r_n": lmc_info.ridge_calibration['r_n'],
+        "ridge_upsilon": lmc_info.ridge_calibration['upsilon'],
+        "lmc_step_size": lmc_info.step_size,
+        "lmc_lipschitz": lmc_info.lipschitz,
+        "mean_projection_cycles": lmc_info.mean_projection_cycles,
+        "max_projection_violation": lmc_info.max_projection_violation,
         "b": model.b,
         "b_raw": model.b_raw,
         "b_capped": model.b_capped,
