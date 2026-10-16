@@ -1,0 +1,10 @@
+{
+  "source_root": "/Users/mengxiao/Desktop/diffusion_extension_simulation/diffusion_extension_github_20261014",
+  "alpha_rows": 750,
+  "gamma_rows": 750,
+  "rate_long_rows": 9750,
+  "rate_summary_rows": 325,
+  "reverse_rows": 210,
+  "stability_replacement_rows": 450,
+  "stability_dataset_unit_rows": 180
+}

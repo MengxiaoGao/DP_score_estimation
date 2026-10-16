@@ -1,0 +1,22 @@
+file_or_scope,field,definition
+alpha_replication_raw.csv,row,"One independent training-dataset repetition for one (n, alpha); datasets are paired across alpha within the same n and rep."
+gamma_replication_raw.csv,row,"One independent training-dataset repetition for one (n, gamma); gamma changes the target distribution."
+rate_panels_long.csv,row,One metric from one replication; filter metric before plotting.
+rate_panels_summary_long.csv,ci95_low/high,Pointwise 95% Student-t interval for the replication mean.
+slope_results.csv,ci95_low/high,"2.5% and 97.5% percentile bounds from 2,000 dataset bootstrap resamples."
+reverse_discretization_raw.csv,row,One reverse run for one fixed private density and step multiplier.
+stability_replacement_raw.csv,row,One single-record replacement at one alpha; non-private columns repeat across alpha by design.
+stability_dataset_units.csv,row,One base-dataset unit after averaging replacements within replacement kind; use for inference.
+stability_plot_long.csv,value,Coefficient or score-function shift for the selected estimator and norm.
+all,n,Training sample size.
+all,rep,"Independent base training-dataset repetition index, zero based."
+all,alpha,Total privacy budget; half is assigned to the score mechanism in the rate panels.
+all,gamma,Target smoothness parameter.
+all,density_tv,TV between reconstructed private density and the true target.
+all,ou_tv,TV between early-stopped OU density and the true target.
+all,generated_binned_tv,Finite-bin TV diagnostic for generated particles versus the true target.
+all,generated_wasserstein,Empirical Wasserstein-1 diagnostic for generated particles.
+all,reverse_to_ou_binned_tv,Binned TV between reverse samples and the early-stopped OU target.
+all,iid_ou_binned_tv,Same-size IID OU finite-particle/binning floor.
+stability,private_lmc_synchronous,Private LMC outputs for neighboring datasets using identical Gaussian innovations.
+stability,noise_floor,Two independent LMC outputs on the same dataset.
