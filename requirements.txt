@@ -1,0 +1,6 @@
+# Environment used for the local export checks. Python 3.12 is recommended.
+numpy==2.3.4
+scipy==1.16.3
+numba==0.64.0
+pandas==2.3.3
+scikit-learn==1.7.2

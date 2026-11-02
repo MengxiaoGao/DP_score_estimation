@@ -1,0 +1,22 @@
+# Inputs and generated numerical outputs
+/data/
+/outputs/
+**/outputs/
+*.xpt
+*.XPT
+*.npz
+*.npy
+*.csv
+*.pkl
+*.pickle
+*.log
+*.tmp
+*.download
+# Environments and caches
+.venv*/
+__pycache__/
+*.py[cod]
+*.nbc
+*.nbi
+.cluster-cache/
+.DS_Store
