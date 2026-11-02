@@ -6,11 +6,11 @@ This repository contains numerical experiments for private score estimation and 
 
 The projected LMC is initialized at zero and run for 500,000 updates. The step size is $0.1/L$ for the 1D synthetic experiments, $0.01/L$ for the 2D synthetic experiments and $0.01/L$ for the NHANES experiment, where $L$ is the calibrated Lipschitz constant of the objective gradient.
 
-The synthetic experiments use 100 repetitions for each configuration, sample sizes $n\in\{1000,2000,4000,8000,16000\}$. For diffusion, the total privacy budget is split equally between score estimation and the histogram.
+The synthetic experiments use 100 repetitions for each configuration, sample sizes $n\in\lbrace1000,2000,4000,8000,16000\rbrace$. For diffusion, the total privacy budget is split equally between score estimation and the histogram.
 
-**Privacy figure ($\alpha$ panel).** This figure shows how loss changes with sample size at different privacy budgets. It fixes $\gamma=0.5$ and compares score budgets $\alpha_{\mathrm{score}}\in\{0.5,1,2,4,8\}$, corresponding to total diffusion budgets $\alpha_{\mathrm{total}}\in\{1,2,4,8,16\}$.
+**Privacy figure ($\alpha$ panel).** This figure shows how loss changes with sample size at different privacy budgets. It fixes $\gamma=0.5$ and compares score budgets $\alpha_{\mathrm{score}}\in \lbrace 0.5,1,2,4,8\rbrace $, corresponding to total diffusion budgets $\alpha_{\mathrm{total}}\in\lbrace1,2,4,8,16\rbrace$.
 
-**Smoothness figure ($\gamma$ panel).** This figure shows how loss changes with sample size for different target smoothness levels. It compares $\gamma\in\{0.2,0.4,0.6,0.8,1\}$, fixing the score budget at $\alpha_{\mathrm{score}}=2$ and the total diffusion budget at $\alpha_{\mathrm{total}}=4$.
+**Smoothness figure ($\gamma$ panel).** This figure shows how loss changes with sample size for different target smoothness levels. It compares $\gamma\in\lbrace0.2,0.4,0.6,0.8,1\rbrace$, fixing the score budget at $\alpha_{\mathrm{score}}=2$ and the total diffusion budget at $\alpha_{\mathrm{total}}=4$.
 
 ## Installation
 
